@@ -318,8 +318,8 @@ def check_for_default_poster(plex, plex_collection_movies, plex_collection_id, t
 def download_poster(plex, plex_collection_movies, plex_collection_id, tmdb_configuration):
     tmdb_collection_id, lang = get_tmdb_collection_id(plex, plex_collection_movies)
     tmdb_collection_images = get_tmdb_data(CONFIG['tmdb_collection_image_url'] % tmdb_collection_id)
-    poster_url_list = get_image_urls(tmdb_collection_images, tmdb_configuration, 'posters', lang, POSTER_ITEM_LIMIT)
-    upload_images_to_plex(poster_url_list, plex_collection_id, 'posters')
+    poster_urls = get_image_urls(tmdb_collection_images, tmdb_configuration, 'posters', lang, POSTER_ITEM_LIMIT)
+    upload_images_to_plex(poster_urls, plex_collection_id, 'posters')
 
 
 def get_plex_data(url):
@@ -356,18 +356,18 @@ def get_image_urls(tmdb_collection_images, tmdb_configuration, image_type, lang,
     return result
 
 
-def upload_images_to_plex(image_list, plex_collection_id, image_type):
-    if image_list:
+def upload_images_to_plex(images, plex_collection_id, image_type):
+    if images:
         plex_selected_image = ''
 
-        bar = Bar('  Downloading %s:' % image_type, max=len(image_list))
+        bar = Bar('  Downloading %s:' % image_type, max=len(images))
 
-        for image in image_list:
+        for image in images:
             bar.next()
 
             if DRY_RUN:
-                print("Would Upload Poster: " + image)
-                return True
+                print("\r\nWould Upload Poster: " + image)
+                continue
 
             requests.post(CONFIG['plex_images_url'] % (plex_collection_id, image_type, image), data={},
                           headers=CONFIG['headers'])
@@ -380,7 +380,7 @@ def upload_images_to_plex(image_list, plex_collection_id, image_type):
 
         # set the highest rated image as selected again
         if DRY_RUN:
-            print("Would Change Selected Poster to: " + plex_selected_image)
+            print("Would Change Selected Poster to: " + images[-1])
             return True
 
         requests.put(CONFIG['plex_images_url'] % (plex_collection_id, image_type[:-1], plex_selected_image),
@@ -436,6 +436,11 @@ def get_tmdb_data(url, retry=True):
     try:
         r = requests.get(url)
 
+        if 'X-RateLimit-Remaining' not in r.headers:
+            print('Rate limit not returned, waiting to 5 seconds to retry')
+            sleep(5)
+            raise requests.exceptions.RequestException('Rate limit not returned')
+
         if DEBUG:
             print('Requests in time limit remaining: %s' % r.headers['X-RateLimit-Remaining'])
 
@@ -446,13 +451,13 @@ def get_tmdb_data(url, retry=True):
 
         return r.json()
     except requests.exceptions.RequestException as e:
-        if retry:
-            get_tmdb_data(url, False)
-
         if DEBUG:
             print(e)
 
         print('Error fetching JSON from The Movie Database: %s' % url)
+
+        if retry:
+            return get_tmdb_data(url, False)
 
 
 def get_sha1(file_path):
