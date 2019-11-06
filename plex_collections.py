@@ -402,6 +402,7 @@ def get_plex_image_url(plex_images_url):
 def get_tmdb_collection_id(plex, plex_collection_movies):
     for plex_collection_movie in plex_collection_movies:
         movie = plex.fetchItem(int(plex_collection_movie.attrib['ratingKey']))
+        lang = 'en'
         match = False
         if DEBUG:
             print('Movie guid: %s' % movie.guid)
@@ -446,9 +447,12 @@ def get_tmdb_data(url, retry=True):
             sleep(wait)
 
         return r.json()
-    except:
+    except requests.exceptions.RequestException as e:
         if retry:
             get_tmdb_data(url, False)
+
+        if DEBUG:
+            print(e)
 
         print('Error fetching JSON from The Movie Database: %s' % url)
 
