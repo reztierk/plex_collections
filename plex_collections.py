@@ -21,8 +21,6 @@ DRY_RUN = False
 FORCE = False
 CONFIG = dict()
 
-err_list = []
-
 
 def init(debug, dry_run=False, force=False):
     global DEBUG
