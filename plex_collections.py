@@ -329,45 +329,38 @@ def get_plex_data(url):
 
 def get_image_urls(tmdb_collection_images, tmdb_configuration, image_type, lang, artwork_item_limit):
     result = []
+    base_url = tmdb_configuration['images']['base_url'] + 'original'
 
-    if tmdb_collection_images[image_type]:
-        i = 0
-        while i < len(tmdb_collection_images[image_type]):
-            image = tmdb_collection_images[image_type][i]
+    if image_type not in tmdb_collection_images or not tmdb_collection_images[image_type]:
+        return result
 
-            # remove images that are not in the films native language or engligh
-            if image['iso_639_1'] is not None and image['iso_639_1'] != 'en' and image['iso_639_1'] != lang:
-                del tmdb_collection_images[image_type][i]
-                continue
+    for i, image in enumerate(tmdb_collection_images[image_type]):
+        # lower score for images that are not in the films native language or engligh
+        if image['iso_639_1'] is not None and image['iso_639_1'] != 'en' and image['iso_639_1'] != lang:
+            tmdb_collection_images[image_type][i]['vote_average'] = 0
 
-            # boost the score for localized posters (according to the preference)
-            if image['iso_639_1'] == lang:
-                tmdb_collection_images[image_type][i]['vote_average'] = image['vote_average'] + 1
+        # boost the score for localized posters (according to the preference)
+        if image['iso_639_1'] == lang:
+            tmdb_collection_images[image_type][i]['vote_average'] += 1
 
-            i += 1
+    sorted_result = sorted(tmdb_collection_images[image_type], key=lambda k: k['vote_average'], reverse=True)
 
-        for i, image in enumerate(sorted(tmdb_collection_images[image_type],
-                                         key=lambda k: k['vote_average'], reverse=True)):
-            if i >= artwork_item_limit:
-                break
-            else:
-                result.append(tmdb_configuration['images']['base_url'] + 'original' + image['file_path'])
-
-    return result
+    return list(map(lambda x: base_url + x['file_path'], sorted_result[:artwork_item_limit]))
 
 
 def upload_images_to_plex(images, plex_collection_id, image_type):
     if images:
         plex_selected_image = ''
 
-        bar = Bar('  Downloading %s:' % image_type, max=len(images))
+        if not DRY_RUN:
+            bar = Bar('  Downloading %s:' % image_type, max=len(images))
 
         for image in images:
-            bar.next()
-
             if DRY_RUN:
-                print("\r\nWould Upload Poster: " + image)
+                print("Would Upload Poster: " + image)
                 continue
+
+            bar.next()
 
             requests.post(CONFIG['plex_images_url'] % (plex_collection_id, image_type, image), data={},
                           headers=CONFIG['headers'])
@@ -376,7 +369,8 @@ def upload_images_to_plex(images, plex_collection_id, image_type):
                 plex_selected_image = \
                     get_plex_image_url(CONFIG['plex_images_url'] % (plex_collection_id, image_type, image))
 
-        bar.finish()
+        if not DRY_RUN:
+            bar.finish()
 
         # set the highest rated image as selected again
         if DRY_RUN:
