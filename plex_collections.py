@@ -19,18 +19,21 @@ POSTER_ITEM_LIMIT = 5
 DEBUG = False
 DRY_RUN = False
 FORCE = False
+LIBRARY_NAME = ''
 CONFIG = dict()
 
 
-def init(debug, dry_run=False, force=False):
+def init(debug, dry_run=False, force=False, library_name=''):
     global DEBUG
     global DRY_RUN
     global FORCE
+    global LIBRARY_NAME
     global CONFIG
 
     DEBUG = debug
     DRY_RUN = dry_run
     FORCE = force
+    LIBRARY_NAME = library_name
 
     with open(CONFIG_FILE, 'r') as stream:
         try:
@@ -85,10 +88,12 @@ def update_both():
     plex_sections = plex.library.sections()
     tmdb_configuration = get_tmdb_data(CONFIG['tmdb_url'])
 
-    print('\r\nYour movie libraries are:')
-
     for plex_section in plex_sections:
         if plex_section.type != 'movie':
+            continue
+
+        if LIBRARY_NAME and LIBRARY_NAME != plex_section.title:
+            print('ID: %s Name: %s - SKIPPED' % (str(plex_section.key).ljust(4, ' '), plex_section.title))
             continue
 
         print('ID: %s Name: %s' % (str(plex_section.key).ljust(4, ' '), plex_section.title))
@@ -117,6 +122,10 @@ def update_summaries():
         if plex_section.type != 'movie':
             continue
 
+        if LIBRARY_NAME and LIBRARY_NAME != plex_section.title:
+            print('ID: %s Name: %s - SKIPPED' % (str(plex_section.key).ljust(4, ' '), plex_section.title))
+            continue
+
         print('ID: %s Name: %s' % (str(plex_section.key).ljust(4, ' '), plex_section.title))
         plex_collections = get_plex_data(CONFIG['plex_collection_url'] % plex_section.key)
         i = 0
@@ -137,10 +146,12 @@ def update_posters():
     plex_sections = plex.library.sections()
     tmdb_configuration = get_tmdb_data(CONFIG['tmdb_url'])
 
-    print('\r\nYour movie libraries are:')
-
     for plex_section in plex_sections:
         if plex_section.type != 'movie':
+            continue
+
+        if LIBRARY_NAME and LIBRARY_NAME != plex_section.title:
+            print('ID: %s Name: %s - SKIPPED' % (str(plex_section.key).ljust(4, ' '), plex_section.title))
             continue
 
         print('ID: %s Name: %s' % (str(plex_section.key).ljust(4, ' '), plex_section.title))
@@ -473,6 +484,7 @@ def cli():
     if not os.path.isfile(CONFIG_FILE):
         click.confirm('Configuration not found, would you like to set it up?', abort=True)
         setup()
+        exit(0)
     pass
 
 
@@ -482,27 +494,30 @@ def command_setup():
 
 
 @cli.command('run')
-@click.option('--debug', default=False, is_flag=True)
-@click.option('--dry-run', default=False, is_flag=True)
-def run(debug, dry_run):
-    init(debug, dry_run)
+@click.option('--debug', '-v', default=False, is_flag=True)
+@click.option('--dry-run', '-d', default=False, is_flag=True)
+@click.option('--library', '-l', default='')
+def run(debug, dry_run, library):
+    init(debug, dry_run, False, library)
     update_both()
 
 
 @cli.command('update_summaries')
-@click.option('--debug', default=False, is_flag=True)
-@click.option('--dry-run', default=False, is_flag=True)
-@click.option('--force', default=False, is_flag=True, help='Overwrite existing data.')
-def command_update_summaries(debug, dry_run, force):
-    init(debug, dry_run, force)
+@click.option('--debug', '-v', default=False, is_flag=True)
+@click.option('--dry-run', '-d', default=False, is_flag=True)
+@click.option('--force', '-f', default=False, is_flag=True, help='Overwrite existing data.')
+@click.option('--library', '-l', default='')
+def command_update_summaries(debug, dry_run, force, library):
+    init(debug, dry_run, force, library)
     update_summaries()
 
 
 @cli.command('update_posters')
-@click.option('--debug', default=False, is_flag=True)
-@click.option('--dry-run', default=False, is_flag=True)
-def command_update_summaries(debug, dry_run):
-    init(debug, dry_run)
+@click.option('--debug', '-v', default=False, is_flag=True)
+@click.option('--dry-run', '-d', default=False, is_flag=True)
+@click.option('--library', '-l', default='')
+def command_update_posters(debug, dry_run, library):
+    init(debug, dry_run, False, library)
     update_posters()
 
 
