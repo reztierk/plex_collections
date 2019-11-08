@@ -96,7 +96,7 @@ def update(areas):
         if plex_section.type != 'movie':
             continue
 
-        if LIBRARY_ID and LIBRARY_ID != plex_section.key:
+        if LIBRARY_ID and LIBRARY_ID != int(plex_section.key):
             print('ID: %s Name: %s - SKIPPED' % (str(plex_section.key).ljust(4, ' '), plex_section.title))
             continue
 
@@ -253,7 +253,7 @@ def download_poster(plex_collection):
     tmdb_collection_id = get_tmdb_collection_id(plex_collection)
 
     tmdb_collection_images = Collection().images(tmdb_collection_id)
-    poster_urls = get_image_urls(tmdb_collection_images, 'posters', 'en', POSTER_ITEM_LIMIT)
+    poster_urls = get_image_urls(tmdb_collection_images, 'posters', POSTER_ITEM_LIMIT)
     upload_images_to_plex(poster_urls, plex_collection_id, 'posters')
 
 
@@ -262,7 +262,7 @@ def get_plex_data(url):
     return ElementTree.fromstring(r.text)
 
 
-def get_image_urls(tmdb_collection_images, image_type, lang, artwork_item_limit):
+def get_image_urls(tmdb_collection_images, image_type, artwork_item_limit):
     result = []
     base_url = TMDBConfiguration().info().images.get('base_url') + 'original'
     images = tmdb_collection_images.entries.get(image_type)
@@ -272,11 +272,11 @@ def get_image_urls(tmdb_collection_images, image_type, lang, artwork_item_limit)
 
     for i, image in enumerate(images):
         # lower score for images that are not in the films native language or engligh
-        if image['iso_639_1'] is not None and image['iso_639_1'] != 'en' and image['iso_639_1'] != lang:
+        if image['iso_639_1'] is not None and image['iso_639_1'] != 'en' and image['iso_639_1'] != TMDB.language:
             images[i]['vote_average'] = 0
 
         # boost the score for localized posters (according to the preference)
-        if image['iso_639_1'] == lang:
+        if image['iso_639_1'] == TMDB.language:
             images[i]['vote_average'] += 1
 
     sorted_result = sorted(images, key=lambda k: k['vote_average'], reverse=True)
@@ -375,7 +375,7 @@ def command_setup():
 @click.option('--debug', '-v', default=False, is_flag=True)
 @click.option('--dry-run', '-d', default=False, is_flag=True)
 @click.option('--force', '-f', default=False, is_flag=True, help='Overwrite existing data.')
-@click.option('--library', default=False, help='Library ID to Update (Default all movie libraries)')
+@click.option('--library', default=False, type=int, help='Library ID to Update (Default all movie libraries)')
 def run(debug, dry_run, force, library, area):
     for a in area:
         if a not in DEFAULT_AREAS:
