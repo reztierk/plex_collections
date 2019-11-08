@@ -20,9 +20,9 @@ the one from TMDB (there is also a 'force' option which will update the summarie
     cd plex_collections
     pip install -r requirements.txt
 
-#Usage
+# Usage
 
-###setup
+### setup
 Used to set the required configuration values (triggered automatically of config.yaml is not found during script initialization).
 
     plex_collections.py setup
@@ -39,12 +39,12 @@ Required values:
  - Custom Poster Filename
     - Filename of custom posters without the file extension (default: movieset-poster-custom)
 
-###list
+### list
 Used to list all available Libraries (useful for easily obtaining a libraries ID)
 
     plex_collections.py list
     
-###run
+### run
 Update Collections, by default it will update both posters and summaries but can target one or the other specifically by
 passing them as arguments. Can also be used with `--dry-run` to test before making changes, or `--library` to update 
 only a specific libraries collections.
