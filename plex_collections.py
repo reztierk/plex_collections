@@ -9,31 +9,38 @@ import click
 import hashlib
 import pprint as pretty
 import urllib.parse as parse
-from time import sleep, time
+import logging
 from plexapi.server import PlexServer
+from tmdbv3api import TMDb, Collection, Movie
+from tmdbv3api import Configuration as TMDBConfiguration
 from progress.bar import Bar
 
 CONFIG_FILE = 'config.yaml'
-TMDB_URL = 'https://api.themoviedb.org/3'
 POSTER_ITEM_LIMIT = 5
+DEFAULT_AREAS = ['posters', 'summaries']
 DEBUG = False
 DRY_RUN = False
 FORCE = False
-LIBRARY_NAME = ''
+LIBRARY_ID = False
 CONFIG = dict()
+TMDB = False
 
 
-def init(debug, dry_run=False, force=False, library_name=''):
+def init(debug=False, dry_run=False, force=False, library_id=''):
     global DEBUG
     global DRY_RUN
     global FORCE
-    global LIBRARY_NAME
+    global LIBRARY_ID
     global CONFIG
+    global TMDB
 
     DEBUG = debug
     DRY_RUN = dry_run
     FORCE = force
-    LIBRARY_NAME = library_name
+    LIBRARY_ID = library_id
+
+    if not DEBUG:
+        logging.getLogger('tmdbv3api.tmdb').disabled = True
 
     with open(CONFIG_FILE, 'r') as stream:
         try:
@@ -42,16 +49,15 @@ def init(debug, dry_run=False, force=False, library_name=''):
             print(exc)
 
     CONFIG['headers'] = {'X-Plex-Token': CONFIG['plex_token']}
-    CONFIG['plex_collection_url'] = '%s/library/sections/%%s/all?type=18' % CONFIG['plex_url']
-    CONFIG['plex_collection_items_url'] = '%s/library/metadata/%%s/children' % CONFIG['plex_url']
     CONFIG['plex_images_url'] = '%s/library/metadata/%%s/%%s?url=%%s' % CONFIG['plex_url']
     CONFIG['plex_images_upload_url'] = '%s/library/metadata/%%s/%%s?includeExternalMedia=1' % CONFIG['plex_url']
     CONFIG['plex_summary_url'] = '%s/library/sections/%%s/all?type=18&id=%%s&summary.value=%%s' % CONFIG['plex_url']
 
-    CONFIG['tmdb_url'] = '%s/configuration?api_key=%s' % (TMDB_URL, CONFIG['tmdb_key'])
-    CONFIG['tmdb_movie_url'] = '%s/movie/%%s?api_key=%s&language=%%s' % (TMDB_URL, CONFIG['tmdb_key'])
-    CONFIG['tmdb_collection_url'] = '%s/collection/%%s?api_key=%s&language=%%s' % (TMDB_URL, CONFIG['tmdb_key'])
-    CONFIG['tmdb_collection_image_url'] = '%s/collection/%%s/images?api_key=%s' % (TMDB_URL, CONFIG['tmdb_key'])
+    TMDB = TMDb()
+    TMDB.api_key = CONFIG['tmdb_key']
+    TMDB.wait_on_rate_limit = True
+    TMDB.language = 'en'
+
     if DEBUG:
         print('CONFIG: ')
         pretty.pprint(CONFIG)
@@ -82,104 +88,55 @@ def setup():
         raise
 
 
-def update_both():
-    print('\r\nUpdating Collection Posters and Summaries')
+def update(areas):
     plex = PlexServer(CONFIG['plex_url'], CONFIG['plex_token'])
     plex_sections = plex.library.sections()
-    tmdb_configuration = get_tmdb_data(CONFIG['tmdb_url'])
 
     for plex_section in plex_sections:
         if plex_section.type != 'movie':
             continue
 
-        if LIBRARY_NAME and LIBRARY_NAME != plex_section.title:
+        if LIBRARY_ID and LIBRARY_ID != plex_section.key:
             print('ID: %s Name: %s - SKIPPED' % (str(plex_section.key).ljust(4, ' '), plex_section.title))
             continue
 
         print('ID: %s Name: %s' % (str(plex_section.key).ljust(4, ' '), plex_section.title))
-        plex_collections = get_plex_data(CONFIG['plex_collection_url'] % plex_section.key)
-        i = 0
+        plex_collections = plex_section.collection()
 
-        for plex_collection in plex_collections:
-            i += 1
-            print('\r\n> %s [%s/%s]' % (plex_collection.attrib['title'], i, len(plex_collections)))
+        # Set TMDB language for section
+        TMDB.language = plex_section.language
 
-            plex_collection_id = plex_collection.attrib['ratingKey']
-            plex_collection_movies = get_plex_data(CONFIG['plex_collection_items_url'] % plex_collection_id)
+        for k, plex_collection in enumerate(plex_collections):
+            print('\r\n> %s [%s/%s]' % (plex_collection.title, k + 1, len(plex_collections)))
 
-            update_summary(plex, plex_section, plex_collection, plex_collection_movies)
-            update_poster(plex, plex_collection_movies, plex_collection_id, tmdb_configuration)
+            if 'posters' in areas:
+                update_poster(plex_collection)
+
+            if 'summaries' in areas:
+                update_summary(plex_collection)
 
 
-def update_summaries():
-    print('\r\nUpdating Collection Summaries')
+def list_libraries():
     plex = PlexServer(CONFIG['plex_url'], CONFIG['plex_token'])
     plex_sections = plex.library.sections()
-
-    print('\r\nYour movie libraries are:')
 
     for plex_section in plex_sections:
         if plex_section.type != 'movie':
             continue
 
-        if LIBRARY_NAME and LIBRARY_NAME != plex_section.title:
-            print('ID: %s Name: %s - SKIPPED' % (str(plex_section.key).ljust(4, ' '), plex_section.title))
-            continue
-
         print('ID: %s Name: %s' % (str(plex_section.key).ljust(4, ' '), plex_section.title))
-        plex_collections = get_plex_data(CONFIG['plex_collection_url'] % plex_section.key)
-        i = 0
-
-        for plex_collection in plex_collections:
-            i += 1
-            print('\r\n> %s [%s/%s]' % (plex_collection.attrib['title'], i, len(plex_collections)))
-
-            plex_collection_id = plex_collection.attrib['ratingKey']
-            plex_collection_movies = get_plex_data(CONFIG['plex_collection_items_url'] % plex_collection_id)
-
-            update_summary(plex, plex_section, plex_collection, plex_collection_movies)
 
 
-def update_posters():
-    print('\r\nUpdating Collection Posters')
-    plex = PlexServer(CONFIG['plex_url'], CONFIG['plex_token'])
-    plex_sections = plex.library.sections()
-    tmdb_configuration = get_tmdb_data(CONFIG['tmdb_url'])
-
-    for plex_section in plex_sections:
-        if plex_section.type != 'movie':
-            continue
-
-        if LIBRARY_NAME and LIBRARY_NAME != plex_section.title:
-            print('ID: %s Name: %s - SKIPPED' % (str(plex_section.key).ljust(4, ' '), plex_section.title))
-            continue
-
-        print('ID: %s Name: %s' % (str(plex_section.key).ljust(4, ' '), plex_section.title))
-        plex_collections = get_plex_data(CONFIG['plex_collection_url'] % plex_section.key)
-        i = 0
-
-        for plex_collection in plex_collections:
-            i += 1
-            print('\r\n> %s [%s/%s]' % (plex_collection.attrib['title'], i, len(plex_collections)))
-
-            plex_collection_id = plex_collection.attrib['ratingKey']
-            plex_collection_movies = get_plex_data(CONFIG['plex_collection_items_url'] % plex_collection_id)
-
-            update_poster(plex, plex_collection_movies, plex_collection_id, tmdb_configuration)
-
-
-def update_summary(plex, plex_section, plex_collection, plex_collection_movies):
-    if not FORCE and plex_collection.attrib['summary'].strip() != '':
+def update_summary(plex_collection):
+    if not FORCE and plex_collection.summary.strip() != '':
         print('Summary Exists.')
         if DEBUG:
-            print(plex_collection.attrib['summary'])
+            print(plex_collection.summary)
         return
 
-    plex_collection_id = plex_collection.attrib['ratingKey']
-    title = plex_collection.attrib['title']
-    summary = get_tmdb_summary(plex, plex_collection_movies, title)
+    summary = get_tmdb_summary(plex_collection)
 
-    if summary == '':
+    if not summary:
         print('No Summary Available.')
         return
 
@@ -187,101 +144,65 @@ def update_summary(plex, plex_section, plex_collection, plex_collection_movies):
         print("Would Update Summary With: " + summary)
         return True
 
-    requests.put(CONFIG['plex_summary_url'] % (plex_section.key, plex_collection_id, parse.quote(summary)),
+    requests.put(CONFIG['plex_summary_url'] %
+                 (plex_collection.librarySectionID, plex_collection.ratingKey, parse.quote(summary)),
                  data={}, headers=CONFIG['headers'])
     print('Summary Updated.')
 
 
-def get_tmdb_summary(plex, plex_collection_movies, title):
-    tmdb_collection_id, lang = get_tmdb_collection_id(plex, plex_collection_movies)
-    tmdb_collection = get_tmdb_data(CONFIG['tmdb_collection_url'] % (tmdb_collection_id, lang))
-
-    if lang == 'en':
-        title = title + ' Collection'
-
-    if tmdb_collection_id == -1:
-        print('  Could not find a matching TMDB collection.')
-    else:
-        if tmdb_collection['name'] != title:
-            print(
-                '  Invalid collection, does not match with the TMDB collection: %s' % tmdb_collection['name'])
-
-        if 'overview' in tmdb_collection:
-            if DEBUG:
-                print(tmdb_collection['overview'])
-            return tmdb_collection['overview']
-    return ''
+def get_tmdb_summary(plex_collection_movies):
+    tmdb_collection_id = get_tmdb_collection_id(plex_collection_movies)
+    collection = Collection().details(collection_id=tmdb_collection_id)
+    return collection.entries.get('overview')
 
 
-def update_poster(plex, plex_collection_movies, plex_collection_id, tmdb_configuration):
+def update_poster(plex_collection):
     poster_found = False
-
-    for plex_collection_movie in plex_collection_movies:
-        movie = plex.fetchItem(int(plex_collection_movie.attrib['ratingKey']))
-        if check_poster(movie, plex_collection_id):
+    for movie in plex_collection.children:
+        if check_posters(movie, plex_collection.ratingKey):
             poster_found = True
             break
 
     if not poster_found:
         print("Collection Poster Not Found!")
-        check_for_default_poster(plex, plex_collection_movies, plex_collection_id, tmdb_configuration)
+        check_for_default_poster(plex_collection)
 
 
-def check_poster(movie, plex_collection_id):
-    custom_poster_path = ''
-    local_poster_path = ''
-
+def check_posters(movie, plex_collection_id):
     for media in movie.media:
-        for mediapart in media.parts:
-            file_path = str(os.path.dirname(mediapart.file)) + "\\"
-
-            if os.path.isfile(file_path + str(CONFIG['custom_poster_filename']) + '.jpg'):
-                custom_poster_path = file_path + str(CONFIG['custom_poster_filename']) + '.jpg'
-            elif os.path.isfile(file_path + str(CONFIG['custom_poster_filename']) + '.png'):
-                custom_poster_path = file_path + str(CONFIG['custom_poster_filename']) + '.png'
-
-            if custom_poster_path != '':
-                if DEBUG:
-                    print("Custom Collection Poster Exists")
-                key = get_sha1(custom_poster_path)
-                poster_exists = check_if_poster_is_uploaded(key, plex_collection_id)
-
-                if poster_exists:
-                    print("Using Custom Collection Poster")
+        for media_part in media.parts:
+            for image_type in ['custom', 'local']:
+                if check_poster(media_part, image_type, plex_collection_id):
                     return True
 
-                if DRY_RUN:
-                    print("Would Set Custom Collection Poster: " + custom_poster_path)
-                    return True
 
-                requests.post(CONFIG['plex_images_upload_url'] % (plex_collection_id, 'posters'),
-                              data=open(custom_poster_path, 'rb'), headers=CONFIG['headers'])
-                print("Custom Collection Poster Set")
-                return True
+def check_poster(media_part, image_type, plex_collection_id):
+    file_path = str(os.path.dirname(media_part.file)) + "\\" + str(CONFIG[image_type + '_poster_filename'])
+    poster_path = ''
 
-            if os.path.isfile(file_path + str(CONFIG['local_poster_filename']) + '.jpg'):
-                local_poster_path = file_path + str(CONFIG['local_poster_filename']) + '.jpg'
-            elif os.path.isfile(file_path + str(CONFIG['local_poster_filename']) + '.png'):
-                local_poster_path = file_path + str(CONFIG['local_poster_filename']) + '.png'
+    if os.path.isfile(file_path + '.jpg'):
+        poster_path = file_path + '.jpg'
+    elif os.path.isfile(file_path + '.png'):
+        poster_path = file_path + '.png'
 
-            if local_poster_path != '':
-                if DEBUG:
-                    print("Local Collection Poster Exists")
-                key = get_sha1(local_poster_path)
-                poster_exists = check_if_poster_is_uploaded(key, plex_collection_id)
+    if poster_path != '':
+        if DEBUG:
+            print("%s Collection Poster Exists" % image_type.capitalize())
+        key = get_sha1(poster_path)
+        poster_exists = check_if_poster_is_uploaded(key, plex_collection_id)
 
-                if poster_exists:
-                    print("Using Local Collection Poster")
-                    return True
+        if poster_exists:
+            print("Using %s Collection Poster" % image_type.capitalize())
+            return True
 
-                if DRY_RUN:
-                    print("Would Set Local Collection Poster: " + local_poster_path)
-                    return True
+        if DRY_RUN:
+            print("Would Set %s Collection Poster: %s" % (image_type.capitalize(), poster_path))
+            return True
 
-                requests.post(CONFIG['plex_images_upload_url'] % (plex_collection_id, 'posters'),
-                              data=open(local_poster_path, 'rb'), headers=CONFIG['headers'])
-                print("Local Collection Poster Set")
-                return True
+        requests.post(CONFIG['plex_images_upload_url'] % (plex_collection_id, 'posters'),
+                      data=open(poster_path, 'rb'), headers=CONFIG['headers'])
+        print(image_type.capitalize() + " Collection Poster Set")
+        return True
 
 
 def check_if_poster_is_uploaded(key, plex_collection_id):
@@ -301,7 +222,8 @@ def check_if_poster_is_uploaded(key, plex_collection_id):
             return True
 
 
-def check_for_default_poster(plex, plex_collection_movies, plex_collection_id, tmdb_configuration):
+def check_for_default_poster(plex_collection):
+    plex_collection_id = plex_collection.ratingKey
     images = get_plex_data(CONFIG['plex_images_url'] % (plex_collection_id, 'posters', ''))
     first_non_default_image = ''
 
@@ -323,13 +245,15 @@ def check_for_default_poster(plex, plex_collection_movies, plex_collection_id, t
         return True
 
     if int(images.attrib['size']) <= 1:
-        download_poster(plex, plex_collection_movies, plex_collection_id, tmdb_configuration)
+        download_poster(plex_collection)
 
 
-def download_poster(plex, plex_collection_movies, plex_collection_id, tmdb_configuration):
-    tmdb_collection_id, lang = get_tmdb_collection_id(plex, plex_collection_movies)
-    tmdb_collection_images = get_tmdb_data(CONFIG['tmdb_collection_image_url'] % tmdb_collection_id)
-    poster_urls = get_image_urls(tmdb_collection_images, tmdb_configuration, 'posters', lang, POSTER_ITEM_LIMIT)
+def download_poster(plex_collection):
+    plex_collection_id = plex_collection.ratingKey
+    tmdb_collection_id = get_tmdb_collection_id(plex_collection)
+
+    tmdb_collection_images = Collection().images(tmdb_collection_id)
+    poster_urls = get_image_urls(tmdb_collection_images, 'posters', 'en', POSTER_ITEM_LIMIT)
     upload_images_to_plex(poster_urls, plex_collection_id, 'posters')
 
 
@@ -338,41 +262,41 @@ def get_plex_data(url):
     return ElementTree.fromstring(r.text)
 
 
-def get_image_urls(tmdb_collection_images, tmdb_configuration, image_type, lang, artwork_item_limit):
+def get_image_urls(tmdb_collection_images, image_type, lang, artwork_item_limit):
     result = []
-    base_url = tmdb_configuration['images']['base_url'] + 'original'
+    base_url = TMDBConfiguration().info().images.get('base_url') + 'original'
+    images = tmdb_collection_images.entries.get(image_type)
 
-    if image_type not in tmdb_collection_images or not tmdb_collection_images[image_type]:
+    if not images:
         return result
 
-    for i, image in enumerate(tmdb_collection_images[image_type]):
+    for i, image in enumerate(images):
         # lower score for images that are not in the films native language or engligh
         if image['iso_639_1'] is not None and image['iso_639_1'] != 'en' and image['iso_639_1'] != lang:
-            tmdb_collection_images[image_type][i]['vote_average'] = 0
+            images[i]['vote_average'] = 0
 
         # boost the score for localized posters (according to the preference)
         if image['iso_639_1'] == lang:
-            tmdb_collection_images[image_type][i]['vote_average'] += 1
+            images[i]['vote_average'] += 1
 
-    sorted_result = sorted(tmdb_collection_images[image_type], key=lambda k: k['vote_average'], reverse=True)
+    sorted_result = sorted(images, key=lambda k: k['vote_average'], reverse=True)
 
     return list(map(lambda x: base_url + x['file_path'], sorted_result[:artwork_item_limit]))
 
 
 def upload_images_to_plex(images, plex_collection_id, image_type):
     if images:
-        plex_selected_image = ''
+        if DRY_RUN:
+            for image in images:
+                print("Would Upload Poster: " + image)
+            print("Would Change Selected Poster to: " + images[-1])
+            return True
 
-        if not DRY_RUN:
-            bar = Bar('  Downloading %s:' % image_type, max=len(images))
+        plex_selected_image = ''
+        bar = Bar('  Downloading %s:' % image_type, max=len(images))
 
         for image in images:
-            if DRY_RUN:
-                print("Would Upload Poster: " + image)
-                continue
-
             bar.next()
-
             requests.post(CONFIG['plex_images_url'] % (plex_collection_id, image_type, image), data={},
                           headers=CONFIG['headers'])
 
@@ -380,14 +304,9 @@ def upload_images_to_plex(images, plex_collection_id, image_type):
                 plex_selected_image = \
                     get_plex_image_url(CONFIG['plex_images_url'] % (plex_collection_id, image_type, image))
 
-        if not DRY_RUN:
-            bar.finish()
+        bar.finish()
 
         # set the highest rated image as selected again
-        if DRY_RUN:
-            print("Would Change Selected Poster to: " + images[-1])
-            return True
-
         requests.put(CONFIG['plex_images_url'] % (plex_collection_id, image_type[:-1], plex_selected_image),
                      data={}, headers=CONFIG['headers'])
 
@@ -402,67 +321,25 @@ def get_plex_image_url(plex_images_url):
             return url[url.index('?url=') + 5:]
 
 
-def get_tmdb_collection_id(plex, plex_collection_movies):
-    for plex_collection_movie in plex_collection_movies:
-        movie = plex.fetchItem(int(plex_collection_movie.attrib['ratingKey']))
-        lang = 'en'
+def get_tmdb_collection_id(plex_collection):
+    for movie in plex_collection.children:
+        guid = movie.guid
         match = False
-        if DEBUG:
-            print('Movie guid: %s' % movie.guid)
 
-        if movie.guid.startswith('com.plexapp.agents.imdb://'):  # Plex Movie agent
-            match = re.search(r'tt[0-9]\w+', movie.guid)
-        elif movie.guid.startswith('com.plexapp.agents.themoviedb://'):  # TheMovieDB agent
-            match = re.search(r'[0-9]\w+', movie.guid)
+        if DEBUG:
+            print('Movie guid: %s' % guid)
+
+        if guid.startswith('com.plexapp.agents.imdb://'):  # Plex Movie agent
+            match = re.search(r'tt[0-9]\w+', guid)
+        elif guid.startswith('com.plexapp.agents.themoviedb://'):  # TheMovieDB agent
+            match = re.search(r'[0-9]\w+', guid)
 
         if not match:
             continue
 
-        movie_id = match.group()
+        movie = Movie().details(movie_id=match.group())
 
-        match = re.search("lang=[a-z]{2}", movie.guid)
-
-        if match:
-            lang = match.group()[5:]
-
-        movie_info = get_tmdb_data(CONFIG['tmdb_movie_url'] % (movie_id, lang))
-
-        if movie_info and 'belongs_to_collection' in movie_info and movie_info['belongs_to_collection'] is not None:
-            collection_id = movie_info['belongs_to_collection']['id']
-            if DEBUG:
-                print('  Retrieved collection id: %s (from: %s id: %s language: %s)'
-                      % (collection_id, movie.title, movie_id, lang))
-            return collection_id, lang
-
-    return -1, ''
-
-
-def get_tmdb_data(url, retry=True):
-    try:
-        r = requests.get(url)
-
-        if 'X-RateLimit-Remaining' not in r.headers:
-            print('Rate limit not returned, waiting to 5 seconds to retry')
-            sleep(5)
-            raise requests.exceptions.RequestException('Rate limit not returned')
-
-        if DEBUG:
-            print('Requests in time limit remaining: %s' % r.headers['X-RateLimit-Remaining'])
-
-        if r.headers['X-RateLimit-Remaining'] == '1':
-            wait = int(r.headers['X-RateLimit-Reset']) - int(time()) + 2
-            print('Pausing for %s seconds, due to rate limit' % wait)
-            sleep(wait)
-
-        return r.json()
-    except requests.exceptions.RequestException as e:
-        if DEBUG:
-            print(e)
-
-        print('Error fetching JSON from The Movie Database: %s' % url)
-
-        if retry:
-            return get_tmdb_data(url, False)
+        return movie.entries.get('belongs_to_collection').get('id')
 
 
 def get_sha1(file_path):
@@ -488,37 +365,35 @@ def cli():
     pass
 
 
-@cli.command('setup')
+@cli.command('setup', help='Set Configuration Values')
 def command_setup():
     setup()
 
 
-@cli.command('run')
-@click.option('--debug', '-v', default=False, is_flag=True)
-@click.option('--dry-run', '-d', default=False, is_flag=True)
-@click.option('--library', '-l', default='')
-def run(debug, dry_run, library):
-    init(debug, dry_run, False, library)
-    update_both()
-
-
-@cli.command('update_summaries')
+@cli.command('run', help='Update Collection Posters and/or Summaries')
+@click.argument('area', nargs=-1)
 @click.option('--debug', '-v', default=False, is_flag=True)
 @click.option('--dry-run', '-d', default=False, is_flag=True)
 @click.option('--force', '-f', default=False, is_flag=True, help='Overwrite existing data.')
-@click.option('--library', '-l', default='')
-def command_update_summaries(debug, dry_run, force, library):
+@click.option('--library', default=False, help='Library ID to Update (Default all movie libraries)')
+def run(debug, dry_run, force, library, area):
+    for a in area:
+        if a not in DEFAULT_AREAS:
+            raise click.BadParameter('Invalid area argument(s), acceptable values are: %s' % '|'.join(DEFAULT_AREAS))
+
+    if not area:
+        area = DEFAULT_AREAS
+
     init(debug, dry_run, force, library)
-    update_summaries()
+    print('\r\nUpdating Collection %s' % ' and '.join(map(lambda x: x.capitalize(), area)))
+    update(area)
 
 
-@cli.command('update_posters')
-@click.option('--debug', '-v', default=False, is_flag=True)
-@click.option('--dry-run', '-d', default=False, is_flag=True)
-@click.option('--library', '-l', default='')
-def command_update_posters(debug, dry_run, library):
-    init(debug, dry_run, False, library)
-    update_posters()
+@cli.command('list', help='List all Libraries')
+def command_update_posters():
+    init()
+    print('\r\nUpdating Collection Posters')
+    list_libraries()
 
 
 if __name__ == "__main__":
