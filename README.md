@@ -58,6 +58,9 @@ only a specific libraries collections.
     # Just summaries
     plex_collections.py run summaries
     
+    # Just posters, dry run and filter by library ID's 
+    plex_collections.py run posters --dry-run --library=5 --library=8
+    
 
 Options: 
     
