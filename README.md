@@ -15,18 +15,21 @@ available.
 Iterates through each collection checking if they contain a summary. If the summary is blank it will attempt to retrieve
 the one from TMDB (there is also a 'force' option which will update the summaries without checking if they are blank first).
 
+# Requirements
+Built for Python 3, intended to be installed and ran within the same environment the plex server instance is installed 
+(as it uses file system access to check posters).
+
 # Installation
     git clone https://github.com/reztierk/plex_collections.git
     cd plex_collections
     pip install -r requirements.txt
-    sudo chmod +x plex_collections.py
 
 # Usage
 
 ### setup
 Used to set the required configuration values (triggered automatically of config.yaml is not found during script initialization).
 
-    plex_collections.py setup
+    python plex_collections.py setup
 
 Required values:
  - Plex URL 
@@ -43,7 +46,7 @@ Required values:
 ### list
 Used to list all available Libraries (useful for easily obtaining a libraries ID)
 
-    plex_collections.py list
+    python plex_collections.py list
     
 ### run
 Update Collections, by default it will update both posters and summaries but can target one or the other specifically by
@@ -51,16 +54,16 @@ passing them as arguments. Can also be used with `--dry-run` to test before maki
 only a specific libraries collections.
 
     # Both posters and summaries
-    plex_collections.py run
+    python plex_collections.py run
     
     # Just posters
-    plex_collections.py run posters
+    python plex_collections.py run posters
     
     # Just summaries
-    plex_collections.py run summaries
+    python plex_collections.py run summaries
     
     # Just posters, dry run and filter by library ID's 
-    plex_collections.py run posters --dry-run --library=5 --library=8
+    python plex_collections.py run posters --dry-run --library=5 --library=8
     
 
 Options: 
