@@ -19,6 +19,7 @@ the one from TMDB (there is also a 'force' option which will update the summarie
     git clone https://github.com/reztierk/plex_collections.git
     cd plex_collections
     pip install -r requirements.txt
+    sudo chmod +x plex_collections.py
 
 # Usage
 
