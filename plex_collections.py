@@ -372,13 +372,14 @@ def command_setup():
     setup()
 
 
-@cli.command('run', help='Update Collection Posters and/or Summaries')
+@cli.command('run', help='Update Collection Posters and/or Summaries',
+             epilog="eg: plex_collections.py run posters --dry-run --library=5 --library=8")
 @click.argument('area', nargs=-1)
 @click.option('--debug', '-v', default=False, is_flag=True)
 @click.option('--dry-run', '-d', default=False, is_flag=True)
 @click.option('--force', '-f', default=False, is_flag=True, help='Overwrite existing data.')
 @click.option('--library', default=False, multiple=True, type=int,
-              help='Library ID(s) to Update (Default all movie libraries)')
+              help='Library ID to Update (Default all movie libraries)')
 def run(debug, dry_run, force, library, area):
     for a in area:
         if a not in DEFAULT_AREAS:
