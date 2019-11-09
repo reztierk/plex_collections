@@ -21,23 +21,23 @@ DEFAULT_AREAS = ['posters', 'summaries']
 DEBUG = False
 DRY_RUN = False
 FORCE = False
-LIBRARY_ID = False
+LIBRARY_IDS = False
 CONFIG = dict()
 TMDB = False
 
 
-def init(debug=False, dry_run=False, force=False, library_id=''):
+def init(debug=False, dry_run=False, force=False, library_ids=False):
     global DEBUG
     global DRY_RUN
     global FORCE
-    global LIBRARY_ID
+    global LIBRARY_IDS
     global CONFIG
     global TMDB
 
     DEBUG = debug
     DRY_RUN = dry_run
     FORCE = force
-    LIBRARY_ID = library_id
+    LIBRARY_IDS = library_ids
 
     if not DEBUG:
         logging.getLogger('tmdbv3api.tmdb').disabled = True
@@ -96,7 +96,7 @@ def update(areas):
         if plex_section.type != 'movie':
             continue
 
-        if LIBRARY_ID and LIBRARY_ID != int(plex_section.key):
+        if LIBRARY_IDS and int(plex_section.key) not in LIBRARY_IDS:
             print('ID: %s Name: %s - SKIPPED' % (str(plex_section.key).ljust(4, ' '), plex_section.title))
             continue
 
@@ -158,22 +158,21 @@ def get_tmdb_summary(plex_collection_movies):
 
 def update_poster(plex_collection):
     poster_found = False
-    for movie in plex_collection.children:
-        if check_posters(movie, plex_collection.ratingKey):
-            poster_found = True
-            break
+    for image_type in ['custom', 'local']:
+        for movie in plex_collection.children:
+            if check_posters(movie, plex_collection.ratingKey, image_type):
+                return
 
     if not poster_found:
         print("Collection Poster Not Found!")
         check_for_default_poster(plex_collection)
 
 
-def check_posters(movie, plex_collection_id):
+def check_posters(movie, plex_collection_id, image_type):
     for media in movie.media:
         for media_part in media.parts:
-            for image_type in ['custom', 'local']:
-                if check_poster(media_part, image_type, plex_collection_id):
-                    return True
+            if check_poster(media_part, image_type, plex_collection_id):
+                return True
 
 
 def check_poster(media_part, image_type, plex_collection_id):
@@ -378,7 +377,8 @@ def command_setup():
 @click.option('--debug', '-v', default=False, is_flag=True)
 @click.option('--dry-run', '-d', default=False, is_flag=True)
 @click.option('--force', '-f', default=False, is_flag=True, help='Overwrite existing data.')
-@click.option('--library', default=False, type=int, help='Library ID to Update (Default all movie libraries)')
+@click.option('--library', default=False, multiple=True, type=int,
+              help='Library ID(s) to Update (Default all movie libraries)')
 def run(debug, dry_run, force, library, area):
     for a in area:
         if a not in DEFAULT_AREAS:
