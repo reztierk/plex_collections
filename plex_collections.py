@@ -177,7 +177,7 @@ def check_posters(movie, plex_collection_id):
 
 
 def check_poster(media_part, image_type, plex_collection_id):
-    file_path = str(os.path.dirname(media_part.file)) + "\\" + str(CONFIG[image_type + '_poster_filename'])
+    file_path = str(os.path.dirname(media_part.file)) + os.path.sep + str(CONFIG[image_type + '_poster_filename'])
     poster_path = ''
 
     if os.path.isfile(file_path + '.jpg'):
@@ -338,6 +338,9 @@ def get_tmdb_collection_id(plex_collection):
             continue
 
         movie = Movie().details(movie_id=match.group())
+
+        if not movie.entries.get('belongs_to_collection'):
+            return '-1'
 
         return movie.entries.get('belongs_to_collection').get('id')
 
