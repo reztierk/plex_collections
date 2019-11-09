@@ -23,7 +23,7 @@ DRY_RUN = False
 FORCE = False
 LIBRARY_IDS = False
 CONFIG = dict()
-TMDB = False
+TMDB = TMDb()
 
 
 def init(debug=False, dry_run=False, force=False, library_ids=False):
@@ -53,7 +53,6 @@ def init(debug=False, dry_run=False, force=False, library_ids=False):
     CONFIG['plex_images_upload_url'] = '%s/library/metadata/%%s/%%s?includeExternalMedia=1' % CONFIG['plex_url']
     CONFIG['plex_summary_url'] = '%s/library/sections/%%s/all?type=18&id=%%s&summary.value=%%s' % CONFIG['plex_url']
 
-    TMDB = TMDb()
     TMDB.api_key = CONFIG['tmdb_key']
     TMDB.wait_on_rate_limit = True
     TMDB.language = 'en'
