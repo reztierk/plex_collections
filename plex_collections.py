@@ -4,7 +4,7 @@ import re
 import os
 import yaml
 import requests
-import xml.etree.ElementTree as ElementTree
+import json
 import click
 import hashlib
 import pprint as pretty
@@ -48,7 +48,7 @@ def init(debug=False, dry_run=False, force=False, library_ids=False):
         except yaml.YAMLError as exc:
             print(exc)
 
-    CONFIG['headers'] = {'X-Plex-Token': CONFIG['plex_token']}
+    CONFIG['headers'] = {'X-Plex-Token': CONFIG['plex_token'], 'Accept': 'application/json'}
     CONFIG['plex_images_url'] = '%s/library/metadata/%%s/%%s?url=%%s' % CONFIG['plex_url']
     CONFIG['plex_images_upload_url'] = '%s/library/metadata/%%s/%%s?includeExternalMedia=1' % CONFIG['plex_url']
     CONFIG['plex_summary_url'] = '%s/library/sections/%%s/all?type=18&id=%%s&summary.value=%%s' % CONFIG['plex_url']
@@ -162,9 +162,8 @@ def update_poster(plex_collection):
             if check_posters(movie, plex_collection.ratingKey, image_type):
                 return
 
-    if not poster_found:
-        print("Collection Poster Not Found!")
-        check_for_default_poster(plex_collection)
+    print("Collection Poster Not Found!")
+    check_for_default_poster(plex_collection)
 
 
 def check_posters(movie, plex_collection_id, image_type):
@@ -206,16 +205,16 @@ def check_poster(media_part, image_type, plex_collection_id):
 def check_if_poster_is_uploaded(key, plex_collection_id):
     images = get_plex_data(CONFIG['plex_images_url'] % (plex_collection_id, 'posters', ''))
     key_prefix = 'upload://posters/'
-    for image in images:
-        if image.attrib['selected'] == '1':
-            if image.attrib['ratingKey'] == key_prefix + key:
+    for image in images.get('Metadata'):
+        if image.get('selected'):
+            if image.get('ratingKey') == key_prefix + key:
                 return True
-        if image.attrib['ratingKey'] == key_prefix + key:
+        if image.get('ratingKey') == key_prefix + key:
             if DRY_RUN:
-                print("Would Change Selected Poster to: " + image.attrib['ratingKey'])
+                print("Would Change Selected Poster to: " + image.get('ratingKey'))
                 return True
 
-            requests.put(CONFIG['plex_images_url'] % (plex_collection_id, 'poster', image.attrib['ratingKey']),
+            requests.put(CONFIG['plex_images_url'] % (plex_collection_id, 'poster', image.get('ratingKey')),
                          data={}, headers=CONFIG['headers'])
             return True
 
@@ -225,11 +224,11 @@ def check_for_default_poster(plex_collection):
     images = get_plex_data(CONFIG['plex_images_url'] % (plex_collection_id, 'posters', ''))
     first_non_default_image = ''
 
-    for image in images:
-        if image.attrib['selected'] == '1' and image.attrib['ratingKey'] != 'default://':
+    for image in images.get('Metadata'):
+        if image.get('selected') and image.get('ratingKey') != 'default://':
             return True
-        if first_non_default_image == '' and image.attrib['ratingKey'] != 'default://':
-            first_non_default_image = image.attrib['ratingKey']
+        if first_non_default_image == '' and image.get('ratingKey') != 'default://':
+            first_non_default_image = image.get('ratingKey')
 
     if first_non_default_image != '':
         print('Default Plex Generated Poster Detected')
@@ -242,7 +241,7 @@ def check_for_default_poster(plex_collection):
                      data={}, headers=CONFIG['headers'])
         return True
 
-    if int(images.attrib['size']) <= 1:
+    if int(images.get('size')) <= 1:
         download_poster(plex_collection)
 
 
@@ -257,7 +256,7 @@ def download_poster(plex_collection):
 
 def get_plex_data(url):
     r = requests.get(url, headers=CONFIG['headers'])
-    return ElementTree.fromstring(r.text)
+    return json.loads(r.text).get('MediaContainer')
 
 
 def get_image_urls(tmdb_collection_images, image_type, artwork_item_limit):
@@ -311,7 +310,7 @@ def upload_images_to_plex(images, plex_collection_id, image_type):
 
 def get_plex_image_url(plex_images_url):
     r = requests.get(plex_images_url, headers=CONFIG['headers'])
-    root = ElementTree.fromstring(r.text)
+    root = json.loads(r.text)
 
     for child in root:
         if child.attrib['selected'] == '1':
@@ -393,9 +392,9 @@ def run(debug, dry_run, force, library, area):
 
 
 @cli.command('list', help='List all Libraries')
-def command_update_posters():
+def list_all():
     init()
-    print('\r\nUpdating Collection Posters')
+    print('\r\nLibraries:')
     list_libraries()
 
 
