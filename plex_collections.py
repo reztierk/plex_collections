@@ -108,6 +108,11 @@ def update(areas):
         for k, plex_collection in enumerate(plex_collections):
             print('\r\n> %s [%s/%s]' % (plex_collection.title, k + 1, len(plex_collections)))
 
+            if 'titleSort' in plex_collection._data.attrib:
+                if plex_collection._data.attrib['titleSort'].endswith('***'):
+                    print('Skipping. (Skip marker found)')
+                    continue
+
             if 'posters' in areas:
                 update_poster(plex_collection)
 

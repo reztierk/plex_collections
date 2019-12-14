@@ -1,5 +1,9 @@
 # plex_collections
 This script is intended to be used to automatically update/check your Plex collection posters and summaries.
+<aside class="notice">
+Add `***` to the end of a collections "Sort Title" to have it be skipped. No updates will be applied (Useful for custom 
+collections).
+</aside>
 
 ##### Posters:
 Iterates through each collection checking the movies associated for the presence of a custom/local collection poster 
