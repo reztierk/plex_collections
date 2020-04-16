@@ -317,9 +317,9 @@ def get_plex_image_url(plex_images_url):
     r = requests.get(plex_images_url, headers=CONFIG['headers'])
     root = json.loads(r.text)
 
-    for child in root:
-        if child.attrib['selected'] == '1':
-            url = child.attrib['key']
+    for child in root['MediaContainer']['Metadata']:
+        if child['selected'] == True:
+            url = child['key']
             return url[url.index('?url=') + 5:]
 
 
