@@ -3,4 +3,4 @@ requests==2.22.0
 progress==1.5
 PlexAPI==3.2.0
 Click==7.0
-PyYAML==5.1.2
+PyYAML==5.4
